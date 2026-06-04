@@ -1,0 +1,90 @@
+name: IOS IPA Install
+options:
+  bundleIdPrefix: com.jn
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+    # The app shells out to Apple Configurator's `cfgutil`, so it is NOT
+    # sandboxed and disables library validation; hardened runtime stays on.
+    ENABLE_APP_SANDBOX: NO
+    ENABLE_HARDENED_RUNTIME: YES
+    RUNTIME_EXCEPTION_DISABLE_LIBRARY_VALIDATION: YES
+    RUNTIME_EXCEPTION_DISABLE_EXECUTABLE_PAGE_PROTECTION: YES
+    ENABLE_FILE_ACCESS_DOWNLOADS_FOLDER: readonly
+    ENABLE_USER_SELECTED_FILES: readonly
+    CODE_SIGN_STYLE: Manual
+  configs:
+    # Debug is ad-hoc signed so a fresh clone builds with no Apple account.
+    Debug:
+      CODE_SIGN_IDENTITY: "-"
+      DEVELOPMENT_TEAM: ""
+    # Team is injected via the DEVELOPMENT_TEAM env var at `xcodegen generate`
+    # time (see the Makefile) so it never lives in the committed project.
+    Release:
+      CODE_SIGN_IDENTITY: "Developer ID Application"
+      DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+      OTHER_CODE_SIGN_FLAGS: "--timestamp"
+
+packages:
+  Coquille:
+    url: https://github.com/alexrozanski/Coquille.git
+    from: "0.3.0"
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
+
+targets:
+  IOS IPA Install:
+    type: application
+    platform: macOS
+    sources:
+      # Info.plist and the entitlements are referenced via build settings below,
+      # not compiled as resources, so they are excluded from the sources phase.
+      - path: "IOS IPA Install"
+        excludes:
+          - "Info.plist"
+          - "IPA_Install.entitlements"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jn.IOS-IPA-Install
+        MARKETING_VERSION: "1.1.0"
+        CURRENT_PROJECT_VERSION: "4"
+        INFOPLIST_FILE: "IOS IPA Install/Info.plist"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        CODE_SIGN_ENTITLEMENTS: "IOS IPA Install/IPA_Install.entitlements"
+        DEVELOPMENT_ASSET_PATHS: '"IOS IPA Install/Preview Content"'
+        ENABLE_PREVIEWS: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        COMBINE_HIDPI_IMAGES: YES
+        DEAD_CODE_STRIPPING: YES
+        SWIFT_EMIT_LOC_STRINGS: YES
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/../Frameworks"
+    dependencies:
+      - package: Coquille
+      - package: Sparkle
+    postBuildScripts:
+      # Re-sign Sparkle's nested helpers/XPC services with Developer ID +
+      # hardened runtime + secure timestamp (Xcode's embed step doesn't), so
+      # notarization accepts them. Release only; runs before the final CodeSign.
+      - name: Re-sign Sparkle for Developer ID
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "${CONFIGURATION}" != "Release" ]; then exit 0; fi
+          FW="${CODESIGNING_FOLDER_PATH}/Contents/Frameworks/Sparkle.framework"
+          [ -d "$FW" ] || exit 0
+          V="$FW/Versions/Current"
+          sign() { /usr/bin/codesign --force --options runtime --timestamp --sign "${EXPANDED_CODE_SIGN_IDENTITY}" "$1"; }
+          sign "$V/XPCServices/Installer.xpc"
+          sign "$V/XPCServices/Downloader.xpc"
+          sign "$V/Autoupdate"
+          sign "$V/Updater.app"
+          sign "$FW"

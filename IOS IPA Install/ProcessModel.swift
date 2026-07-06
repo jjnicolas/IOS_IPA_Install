@@ -38,7 +38,10 @@ class ProcessModel {
     private let cfgutilPaths = [
         "/usr/local/bin/cfgutil",
         "/usr/bin/cfgutil",
-        "/opt/homebrew/bin/cfgutil"
+        "/opt/homebrew/bin/cfgutil",
+        // Bundled locations, used when "Install Automation Tools" was never run
+        "/Applications/Apple Configurator.app/Contents/MacOS/cfgutil",
+        "/Applications/Apple Configurator 2.app/Contents/MacOS/cfgutil"
     ]
 
     func process(url: URL, ecid: String) async {
